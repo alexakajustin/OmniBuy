@@ -61,34 +61,10 @@ class SearchEngine:
                 p.price = round(p.price * rate, 2)
                 p.currency = "RON"
 
-        # Relevancy Filter: soft filter — only drops results if most items match
-        # If the filter would drop too many results, skip it entirely
-        # (the supplier's own search engine already filtered for relevance)
-        import re
-        query_words = [w.lower() for w in re.findall(r'\b\w{3,}\b', f"{query} {optimized_query}")]
-        if query_words:
-            scraped = [p for p in all_results if p.price > 0]
-            links = [p for p in all_results if p.price == 0]
-
-            if scraped:
-                matched = []
-                for p in scraped:
-                    name_lower = p.name.lower()
-                    name_words = set(w.lower() for w in re.findall(r'\b\w+\b', p.name))
-
-                    # Match: exact word OR substring (4+ chars)
-                    if any(qw in name_words for qw in query_words):
-                        matched.append(p)
-                    elif any(qw in name_lower for qw in query_words if len(qw) >= 4):
-                        matched.append(p)
-
-                # Only apply filter if it keeps at least 20% of scraped results
-                if matched and len(matched) >= len(scraped) * 0.2:
-                    all_results = matched + links
-                    dropped = len(scraped) - len(matched)
-                    if dropped:
-                        logger.debug("Relevancy filter dropped %d/%d scraped results", dropped, len(scraped))
-                # else: keep all — filter too aggressive for this query
+        # Technical Spec & Relevancy Filter:
+        # Strictly ensures mandatory technical features (PoE, Gigabit, Cat6, etc.) are respected
+        from engine.spec_filter import filter_spec_compliance
+        all_results = filter_spec_compliance(f"{query} {optimized_query}", all_results)
 
         return all_results
 

@@ -77,7 +77,18 @@ class Scraper(BaseScraper):
         price_el = item.select_one("font[color='red'], .price, .pret, span.pret")
         if price_el:
             price_text = price_el.get_text(strip=True)
-            parsed = self._parse_price(price_text)
+            # Mondoplast format: "Pret nou588.09 LEI*) Pretul nu contine TVAcuTVA 21%: 711.59 LEIDisponibilitate :In stoc"
+            # Extract the final price with TVA (or without if TVA not found)
+            m_tva = re.search(r"cuTVA(?:\s*\d+%)?:\s*(\d+(?:[.,]\d+)?)", price_text, re.IGNORECASE)
+            m_nou = re.search(r"(?:Pret\s*nou)?\s*(\d+(?:[.,]\d+)?)\s*(?:LEI|RON)", price_text, re.IGNORECASE)
+            if m_tva:
+                target_str = m_tva.group(1)
+            elif m_nou:
+                target_str = m_nou.group(1)
+            else:
+                target_str = price_text
+
+            parsed = self._parse_price(target_str)
             if parsed is not None:
                 price = parsed
         else:

@@ -17,6 +17,8 @@ class Product:
     timestamp: str = field(default_factory=lambda: datetime.now().strftime("%Y-%m-%d %H:%M"))
     original_price: float | None = None
     original_currency: str | None = None
+    composite_score: float = 0.0
+    score_breakdown: dict = field(default_factory=dict)
 
     @property
     def price_display(self) -> str:
@@ -26,7 +28,7 @@ class Product:
         return f"{self.price:,.2f} {self.currency}"
 
     def to_dict(self) -> dict:
-        """Convert to dict for CSV export."""
+        """Convert to dict for API & CSV export."""
         return {
             "name": self.name,
             "price": self.price,
@@ -36,5 +38,7 @@ class Product:
             "url": self.url,
             "supplier": self.supplier,
             "in_stock": self.in_stock,
+            "composite_score": self.composite_score,
+            "score_breakdown": self.score_breakdown,
             "timestamp": self.timestamp,
         }

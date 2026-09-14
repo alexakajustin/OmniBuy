@@ -16,13 +16,19 @@ from scrapers.registry import get_scrapers, list_suppliers
 from engine.search import SearchEngine
 from engine.comparator import sort_by_price
 
+from web.chat_router import router as chat_router
+from engine.llm_optimizer import gemini_balancer
+
 logger = logging.getLogger("BestBuyTool.Web")
 
 app = FastAPI(
     title="BestBuyTool API",
-    description="Web scraping comparison search engine backend API",
-    version="1.0.0",
+    description="Web scraping comparison search engine backend API with agent load balancing",
+    version="1.1.0",
 )
+
+# Mount chat and agent load balancing router
+app.include_router(chat_router)
 
 # Thread pool for CPU/IO-bound scraping jobs
 executor = ThreadPoolExecutor(max_workers=10)
@@ -33,6 +39,24 @@ STATIC_DIR = os.path.join(WEB_DIR, "static")
 
 # Ensure static dir exists
 os.makedirs(STATIC_DIR, exist_ok=True)
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+def favicon():
+    from starlette.responses import Response
+    return Response(status_code=204)
+
+
+@app.get("/api/health")
+def health_check():
+    """Health check endpoint for external load balancers (Nginx, Docker, ALB)."""
+    return {
+        "status": "healthy",
+        "agent_balancer": {
+            "healthy_models": len(gemini_balancer.get_healthy_models()),
+            "total_models": len(gemini_balancer.models),
+        },
+    }
 
 
 @app.get("/api/suppliers")
