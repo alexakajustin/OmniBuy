@@ -17,6 +17,7 @@ class Product:
     timestamp: str = field(default_factory=lambda: datetime.now().strftime("%Y-%m-%d %H:%M"))
     original_price: float | None = None
     original_currency: str | None = None
+    is_link: bool = False  # placeholder pointing to the supplier's search page, not a real product
 
     @property
     def price_display(self) -> str:
@@ -37,4 +38,5 @@ class Product:
             "supplier": self.supplier,
             "in_stock": self.in_stock,
             "timestamp": self.timestamp,
+            "is_link": self.is_link,
         }

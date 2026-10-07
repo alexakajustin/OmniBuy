@@ -25,8 +25,29 @@ const resultsCount = document.getElementById('results-count');
 const resultsTbody = document.getElementById('results-tbody');
 const exportCsvBtn = document.getElementById('export-csv-btn');
 
+const searchInfo = document.getElementById('search-info');
 const loadingState = document.getElementById('loading-state');
 const toastContainer = document.getElementById('toast-container');
+
+// Scraped names/URLs come from third-party sites — never put them into innerHTML unescaped.
+function escapeHtml(value) {
+    return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+// Only allow http(s) links (blocks javascript: and similar schemes).
+function safeUrl(url) {
+    try {
+        const parsed = new URL(url, window.location.origin);
+        return ['http:', 'https:'].includes(parsed.protocol) ? parsed.href : '#';
+    } catch {
+        return '#';
+    }
+}
 
 // Startup Initialization
 document.addEventListener('DOMContentLoaded', () => {
@@ -71,7 +92,7 @@ function renderSuppliers(suppliers) {
         div.dataset.country = sup.country;
         
         const tags = [];
-        tags.push(`<span class="tag tag-${sup.country.toLowerCase()}">${sup.country}</span>`);
+        tags.push(`<span class="tag tag-${escapeHtml(sup.country.toLowerCase())}">${escapeHtml(sup.country)}</span>`);
         if (sup.link_only) {
             tags.push('<span class="tag tag-link">Link-only</span>');
         }
@@ -81,7 +102,7 @@ function renderSuppliers(suppliers) {
                 <i class="fa-solid fa-check"></i>
             </div>
             <div class="supplier-info">
-                <span class="supplier-name">${sup.name}</span>
+                <span class="supplier-name">${escapeHtml(sup.name)}</span>
                 <div class="supplier-tags">${tags.join('')}</div>
             </div>
         `;
@@ -147,38 +168,81 @@ async function performSearch() {
     loadingState.classList.remove('hidden');
     bestBuyBanner.classList.add('hidden');
     resultsSection.classList.add('hidden');
+    searchBtn.disabled = true;
 
     try {
-        const supplierParams = selectedIds.join(',');
-        const forceScrape = document.getElementById('force-scrape-cb').checked;
-        const aiOptimize = document.getElementById('ai-optimize-cb').checked;
-        const response = await fetch(`/api/search?q=${encodeURIComponent(query)}&suppliers=${supplierParams}&force_scrape=${forceScrape}&ai_optimize=${aiOptimize}`);
-        
+        const params = new URLSearchParams({
+            v: 2,
+            q: query,
+            suppliers: selectedIds.join(','),
+            force_scrape: document.getElementById('force-scrape-cb').checked,
+            ai_optimize: document.getElementById('ai-optimize-cb').checked,
+        });
+        const response = await fetch(`/api/search?${params}`);
+
         if (!response.ok) {
-            const errData = await response.json();
-            throw new Error(errData.detail || 'Căutarea a eșuat.');
+            const errData = await response.json().catch(() => ({}));
+            const detail = typeof errData.detail === 'string' ? errData.detail : null;
+            throw new Error(detail || `Căutarea a eșuat (HTTP ${response.status}).`);
         }
 
-        currentResults = await response.json();
-        console.log('[BestBuyTool] API returned', currentResults.length, 'results:', currentResults);
+        const data = await response.json();
+        currentResults = Array.isArray(data.results) ? data.results : [];
+        console.log('[BestBuyTool] API returned', currentResults.length, 'results:', data);
 
-        // Apply client-side price range filter
+        // Apply client-side price range filter (only to products that have a price)
         const priceMin = parseFloat(document.getElementById('price-min').value) || 0;
         const priceMax = parseFloat(document.getElementById('price-max').value) || Infinity;
-        
+
         const filteredResults = currentResults.filter(p => {
-            if (p.price === 0) return true; // always show link-only
+            if (p.is_link || p.price <= 0) return true;
             return p.price >= priceMin && p.price <= priceMax;
         });
-        console.log('[BestBuyTool] After price filter:', filteredResults.length, 'results (min:', priceMin, 'max:', priceMax, ')');
 
+        renderSearchInfo(data);
         displayResults(filteredResults, query);
     } catch (error) {
         showToast(error.message, 'error');
     } finally {
         // Hide Loader
         loadingState.classList.add('hidden');
+        searchBtn.disabled = false;
     }
+}
+
+// Show what was actually searched (AI term) and how each supplier responded
+function renderSearchInfo(data) {
+    const lines = [];
+
+    if (data.ai) {
+        if (data.effective_query !== data.query) {
+            lines.push(`<div class="search-info-line"><i class="fa-solid fa-brain"></i>
+                AI (${escapeHtml(data.ai.source)}) a căutat: <strong>${escapeHtml(data.effective_query)}</strong>
+                <span>(original: ${escapeHtml(data.query)})</span></div>`);
+        } else if (!data.ai.note) {
+            lines.push(`<div class="search-info-line"><i class="fa-solid fa-brain"></i>
+                AI a păstrat căutarea originală: <strong>${escapeHtml(data.query)}</strong></div>`);
+        }
+        if (data.ai.note) {
+            lines.push(`<div class="search-info-line warn"><i class="fa-solid fa-triangle-exclamation"></i>
+                ${escapeHtml(data.ai.note)}</div>`);
+        }
+    }
+
+    const statusLabels = { ok: 'rezultate', link: 'doar link', irrelevant: 'nimic relevant', error: 'eroare' };
+    const chips = (data.suppliers || []).map(s => {
+        let label = s.status === 'ok' ? `${s.count} ${statusLabels.ok}` : statusLabels[s.status] || s.status;
+        if (data.ai && s.query_used && s.query_used !== data.effective_query) {
+            label += ', reîncercat cu căutarea originală';
+        }
+        return `<span class="supplier-chip ${escapeHtml(s.status)}">${escapeHtml(s.supplier)}: ${escapeHtml(label)}</span>`;
+    });
+    if (chips.length) {
+        lines.push(`<div class="search-info-line">${chips.join('')}</div>`);
+    }
+
+    searchInfo.innerHTML = lines.join('');
+    searchInfo.classList.toggle('hidden', lines.length === 0);
 }
 
 // Render Results
@@ -196,9 +260,12 @@ function displayResults(products, query) {
     resultsSection.classList.remove('hidden');
 
     // Find Best Buy (ignoring link-only and products with price <= 0)
-    const pricedProducts = products.filter(p => p.price > 0);
-    const cheapest = pricedProducts.length > 0 
-        ? pricedProducts.reduce((min, p) => p.price < min.price ? p : min, pricedProducts[0]) 
+    // Prefer products that are in stock; fall back to the cheapest overall.
+    const pricedProducts = products.filter(p => !p.is_link && p.price > 0);
+    const inStock = pricedProducts.filter(p => p.in_stock);
+    const candidates = inStock.length > 0 ? inStock : pricedProducts;
+    const cheapest = candidates.length > 0
+        ? candidates.reduce((min, p) => p.price < min.price ? p : min, candidates[0])
         : null;
 
     // Display Best Buy Card
@@ -209,15 +276,17 @@ function displayResults(products, query) {
              bestBuyPrice.innerHTML += ` <span style="font-size: 0.6em; opacity: 0.8;">(${cheapest.original_price.toFixed(2)} ${cheapest.original_currency})</span>`;
         }
         bestBuySupplier.textContent = cheapest.supplier;
-        bestBuyLink.href = cheapest.url;
+        bestBuyLink.href = safeUrl(cheapest.url);
         bestBuyBanner.classList.remove('hidden');
     }
 
     // Populate Table rows
     products.forEach((p, index) => {
         const tr = document.createElement('tr');
-        const isBestBuy = cheapest && p.name === cheapest.name && p.price === cheapest.price;
-        const isLinkOnly = p.price === 0;
+        const isBestBuy = p === cheapest;
+        const isLinkOnly = p.is_link;
+        const url = escapeHtml(safeUrl(p.url));
+        const name = escapeHtml(p.name);
 
         if (isBestBuy) tr.className = 'best-buy-row';
         if (isLinkOnly) tr.className = 'link-only-row';
@@ -226,11 +295,13 @@ function displayResults(products, query) {
         let priceHtml = '';
         if (isLinkOnly) {
             priceHtml = '<span class="price-col text-secondary">[LINK-ONLY]</span>';
+        } else if (p.price <= 0) {
+            priceHtml = '<span class="price-col text-secondary">Preț indisponibil</span>';
         } else {
             if (p.original_price && p.original_currency) {
-                priceHtml = `<span class="price-col">${p.price.toFixed(2)} ${p.currency} <small class="text-secondary" style="font-size: 0.8em; margin-left: 4px;">(${p.original_price.toFixed(2)} ${p.original_currency})</small></span>`;
+                priceHtml = `<span class="price-col">${p.price.toFixed(2)} ${escapeHtml(p.currency)} <small class="text-secondary" style="font-size: 0.8em; margin-left: 4px;">(${p.original_price.toFixed(2)} ${escapeHtml(p.original_currency)})</small></span>`;
             } else {
-                priceHtml = `<span class="price-col">${p.price.toFixed(2)} ${p.currency}</span>`;
+                priceHtml = `<span class="price-col">${p.price.toFixed(2)} ${escapeHtml(p.currency)}</span>`;
             }
             if (isBestBuy) {
                 priceHtml += '<span class="table-best-buy-badge">★ Best Buy</span>';
@@ -245,15 +316,15 @@ function displayResults(products, query) {
         tr.innerHTML = `
             <td class="row-index">${index + 1}</td>
             <td>
-                <a href="${p.url}" target="_blank" class="product-link" title="${p.name}">
-                    ${p.name}
+                <a href="${url}" target="_blank" rel="noopener noreferrer" class="product-link" title="${name}">
+                    ${name}
                 </a>
             </td>
             <td>${priceHtml}</td>
-            <td><strong>${p.supplier}</strong></td>
+            <td><strong>${escapeHtml(p.supplier)}</strong></td>
             <td>${stockHtml}</td>
             <td>
-                <a href="${p.url}" target="_blank" class="btn-action" style="padding: 0.35rem 0.75rem; font-size: 0.8rem;">
+                <a href="${url}" target="_blank" rel="noopener noreferrer" class="btn-action" style="padding: 0.35rem 0.75rem; font-size: 0.8rem;">
                     Vizitează <i class="fa-solid fa-arrow-up-right-from-square"></i>
                 </a>
             </td>
@@ -271,15 +342,16 @@ function exportResultsToCSV() {
     }
 
     const headers = ['Nume Produs', 'Pret', 'Moneda', 'Furnizor', 'In Stoc', 'URL', 'Data Cautarii'];
+    const csvCell = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
     const rows = currentResults.map(p => [
-        `"${p.name.replace(/"/g, '""')}"`,
-        p.price,
+        p.name,
+        p.is_link ? '' : p.price,
         p.currency,
         p.supplier,
         p.in_stock ? 'DA' : 'NU',
         p.url,
         p.timestamp
-    ]);
+    ].map(csvCell));
 
     const csvContent = "\uFEFF" + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -308,7 +380,7 @@ function showToast(message, type = 'info') {
 
     toast.innerHTML = `
         <i class="fa-solid ${iconClass}"></i>
-        <span>${message}</span>
+        <span>${escapeHtml(message)}</span>
     `;
 
     toastContainer.appendChild(toast);

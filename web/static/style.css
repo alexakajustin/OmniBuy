@@ -527,6 +527,46 @@ header {
     box-shadow: 0 4px 14px var(--glow-green);
 }
 
+/* --- Search Info (AI term + supplier status) --- */
+.search-info {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    margin-bottom: 1.25rem;
+    font-size: 0.9rem;
+}
+
+.search-info-line {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    color: var(--text-secondary);
+}
+
+.search-info-line strong {
+    color: var(--text-primary);
+}
+
+.search-info-line.warn {
+    color: #fbbf24;
+}
+
+.supplier-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.2rem 0.6rem;
+    border-radius: 999px;
+    border: 1px solid var(--card-border);
+    font-size: 0.8rem;
+}
+
+.supplier-chip.ok { color: var(--accent-green); border-color: rgba(16, 185, 129, 0.3); }
+.supplier-chip.link { color: var(--accent-cyan); border-color: rgba(6, 182, 212, 0.3); }
+.supplier-chip.irrelevant { color: var(--text-secondary); }
+.supplier-chip.error { color: var(--accent-red); border-color: rgba(239, 68, 68, 0.3); }
+
 .table-container {
     overflow-x: auto;
     width: 100%;

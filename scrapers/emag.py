@@ -21,16 +21,6 @@ class Scraper(BaseScraper):
     def base_url(self) -> str:
         return "https://www.emag.ro"
 
-    @property
-    def is_link_only(self) -> bool:
-        # Override to ensure the engine always runs the scrape search instead of shortcutting
-        return False
-
-    @is_link_only.setter
-    def is_link_only(self, value):
-        # Ignore setting from registry
-        pass
-
     def get_search_url(self, query: str) -> str:
         return f"{self.base_url}/search/{quote_plus(query)}/sort-priceasc/c"
 
@@ -41,7 +31,7 @@ class Scraper(BaseScraper):
         try:
             response = self._session.get(search_url, timeout=15)
             response.raise_for_status()
-            html = response.text
+            html = self._decode(response)
         except Exception as e:
             logger.warning("[%s] Search request failed: %s", self.supplier_name, e)
             return self._fallback_link(query)

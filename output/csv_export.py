@@ -16,7 +16,10 @@ def export(products: list[Product], filepath: str):
         return
 
     path = Path(filepath)
-    fieldnames = ["name", "price", "currency", "url", "supplier", "in_stock", "timestamp"]
+    fieldnames = [
+        "name", "price", "currency", "original_price", "original_currency",
+        "url", "supplier", "in_stock", "is_link", "timestamp",
+    ]
 
     with open(path, "w", newline="", encoding="utf-8-sig") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)

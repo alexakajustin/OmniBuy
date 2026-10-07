@@ -31,6 +31,14 @@ de relevanță și afișează ofertele sortate crescător după preț.
   Include un mod opțional de "AI Fine-Tuning" care folosește LLM (Gemini) pentru
   optimizarea termenilor de căutare introduși de utilizator (de exemplu, extrage
   coduri de produs/SKU din interogări complexe pentru a nu genera 0 rezultate).
+  Protecție anti-halucinație: AI-ul are voie doar să SCURTEZE căutarea. Orice
+  sugestie care conține cuvinte/coduri care nu apar în textul tău e respinsă și
+  se caută cu textul original. Dacă termenul AI nu găsește nimic la un furnizor,
+  se reîncearcă automat cu textul original. UI-ul arată ce s-a căutat efectiv.
+  Configurare în .env: GEMINI_API_KEY, DEEPSEEK_API_KEY (fallback), opțional
+  GEMINI_MODELS (listă separată prin virgulă, încercate în ordine când unul își
+  termină cota; implicit gemini-3.5-flash-lite,gemini-3.1-flash-lite) și
+  DEEPSEEK_MODEL (implicit deepseek-chat).
 
 * CONTROL AGRESIVITATE SCRAPING (WEB SCRAPING vs. LINK-ONLY):
   - Web Scraping Activ (Bifat): Răzuiește paginile magazinelor pentru a extrage
@@ -66,12 +74,13 @@ Aplicația folosește strategii diferite în funcție de tipul fiecărui site:
 
 * Conectica (conectica.ro) — Răzuire activă completă (prețuri, stocuri, link-uri).
 * DIPOL (dipolnet.com) — Răzuire activă completă.
-* Mondoplast (mondoplast.ro) — Răzuire activă (folosește căutare de tip POST).
-* eMAG (emag.ro) — Răzuire activă completă.
+* Mondoplast (mondoplast.ro) — Răzuire activă (căutare POST). Se folosește prețul
+  CU TVA (site-ul afișează implicit fără TVA).
+* eMAG (emag.ro) — Link-only (blochează cererile automate cu HTTP 501 / timeout).
 * URY Shop (ury.ro) — Link-only direct (site-ul folosește client-side rendering
   prin Algolia InstantSearch; produsele nu există în codul HTML de pe server).
 * NOAA Concept (noaa.ro) — B2B (necesită login pentru prețuri, returnează link).
-* ATU Tech (a2t.ro) — Link-only direct (API-ul lor intern de căutare este protejat).
+* ATU Tech (a2t.ro) — Răzuire prin API-ul de catalog al site-ului (prețuri, stoc).
 * Lanberg (pl.lanberg.eu) — Link-only direct (site de producător, nu afișează prețuri).
 
 --------------------------------------------------------------------------------

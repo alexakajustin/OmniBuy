@@ -5,7 +5,7 @@
     { "id": "noaa",        "name": "NOAA Concept",     "module": "scrapers.noaa",        "url": "https://www.noaa.ro",         "country": "RO", "enabled": true,  "link_only": false},
     { "id": "atu_tech",    "name": "ATU Tech",         "module": "scrapers.atu_tech",    "url": "https://www.a2t.ro",          "country": "RO", "enabled": true,  "link_only": false},
     { "id": "ury_shop",    "name": "URY Shop",         "module": "scrapers.ury_shop",    "url": "https://ury.ro",          "country": "RO", "enabled": true,  "link_only": true},
-    { "id": "emag",        "name": "eMAG",             "module": "scrapers.emag",        "url": "https://www.emag.ro",         "country": "RO", "enabled": true,  "link_only": false},
+    { "id": "emag",        "name": "eMAG",             "module": "scrapers.emag",        "url": "https://www.emag.ro",         "country": "RO", "enabled": true,  "link_only": true},
     { "id": "dipol",       "name": "DIPOL",            "module": "scrapers.dipol",       "url": "https://www.dipolnet.com",    "country": "PL", "enabled": true,  "link_only": false},
     { "id": "lanberg",     "name": "Lanberg",          "module": "scrapers.lanberg",     "url": "https://pl.lanberg.eu",          "country": "PL", "enabled": true,  "link_only": false}
   ]

@@ -1,7 +1,12 @@
 requests>=2.31
+curl_cffi>=0.7
 beautifulsoup4>=4.12
 lxml>=5.0
 tabulate>=0.9
 colorama>=0.4
 fastapi>=0.110
 uvicorn>=0.28
+python-dotenv>=1.0
+
+# dev
+pytest>=8.0

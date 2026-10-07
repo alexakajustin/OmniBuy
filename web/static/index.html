@@ -11,7 +11,7 @@
     <!-- FontAwesome for Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <!-- Custom styling -->
-    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="/static/style.css?v=4">
 </head>
 <body>
     <!-- Neon blur background decorations -->
@@ -65,7 +65,7 @@
                         </div>
                         <div style="display: flex; align-items: center; gap: 8px;">
                             <input type="checkbox" id="force-scrape-cb" checked style="width: 18px; height: 18px; cursor: pointer; accent-color: var(--primary);">
-                            <label for="force-scrape-cb" style="margin: 0; cursor: pointer; font-weight: 600; color: var(--text);" title="Ignoră limitările link_only. Dacă e bifat, va încerca extragerea prețurilor direct din site-urile protejate.">
+                            <label for="force-scrape-cb" style="margin: 0; cursor: pointer; font-weight: 600; color: var(--text);" title="Bifat: extrage produse și prețuri de pe site-uri. Debifat: doar link-uri de căutare, fără cereri către magazine. Magazinele marcate Link-only (care blochează roboții) dau mereu doar link.">
                                 <i class="fa-solid fa-spider"></i> Web Scraping (NU SPAMA)
                             </label>
                         </div>
@@ -120,6 +120,8 @@
                 </button>
             </div>
             
+            <div id="search-info" class="search-info hidden"></div>
+
             <div class="table-container">
                 <table id="results-table">
                     <thead>
@@ -159,6 +161,6 @@
         <p>BestBuyTool © 2026 • Pair programmed for B2B procurement & high efficiency</p>
     </footer>
 
-    <script src="/static/app.js"></script>
+    <script src="/static/app.js?v=4"></script>
 </body>
 </html>

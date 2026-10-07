@@ -34,10 +34,10 @@ def print_results(products: list[Product], query: str):
     rows = []
     for i, p in enumerate(products, 1):
         is_best = cheapest and p is cheapest
-        is_link = p.price == 0
-
-        if is_link:
+        if p.is_link:
             price_str = f"{Fore.BLUE}[LINK]{Style.RESET_ALL}"
+        elif p.price <= 0:
+            price_str = f"{Fore.YELLOW}preț indisponibil{Style.RESET_ALL}"
         elif is_best:
             price_str = f"{Fore.GREEN}★ {p.price_display}{Style.RESET_ALL}"
         else:
@@ -62,7 +62,7 @@ def print_results(products: list[Product], query: str):
         print(f"{'─' * 80}{Style.RESET_ALL}")
 
     # Link-only suppliers
-    link_products = [p for p in products if p.price == 0]
+    link_products = [p for p in products if p.is_link]
     if link_products:
         print(f"\n{Fore.BLUE}Linkuri directe (fără scraping):{Style.RESET_ALL}")
         for p in link_products:

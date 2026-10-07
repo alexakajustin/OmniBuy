@@ -47,7 +47,7 @@ def cmd_search(args):
     scrapers = get_scrapers(
         supplier_ids=supplier_ids,
         country=country,
-        force_scrape=getattr(args, "force", False),
+        force_scrape=not args.links_only,
     )
     if not scrapers:
         print("Eroare: niciun scraper disponibil cu filtrele specificate.")
@@ -58,10 +58,22 @@ def cmd_search(args):
 
     # Search
     engine = SearchEngine(scrapers)
-    results = engine.search(query, ai_optimize=getattr(args, "ai", False))
+    outcome = engine.search(query, ai_optimize=args.ai)
+
+    if outcome.ai_source is not None:
+        if outcome.effective_query != query:
+            print(f"🧠 AI ({outcome.ai_source}) a căutat: '{outcome.effective_query}'")
+        if outcome.ai_note:
+            print(f"⚠  {outcome.ai_note}")
+
+    for status in outcome.suppliers:
+        if status.status == "error":
+            print(f"⚠  {status.supplier}: eroare la căutare (vezi link-ul direct)")
+        elif status.query_used and status.query_used != outcome.effective_query:
+            print(f"↺  {status.supplier}: fără rezultate pentru termenul AI, căutat cu '{status.query_used}'")
 
     # Sort by price
-    results = sort_by_price(results)
+    results = sort_by_price(outcome.products)
 
     # Display
     print_results(results, query)
@@ -130,9 +142,14 @@ def main():
         help="Export rezultate în fișier CSV",
     )
     search_parser.add_argument(
+        "--links-only",
+        action="store_true",
+        help="Nu face web scraping — doar generează link-uri de căutare pentru fiecare furnizor",
+    )
+    search_parser.add_argument(
         "--force",
         action="store_true",
-        help="Forțează web scraping chiar și pentru furnizorii marcați cu link_only",
+        help=argparse.SUPPRESS,  # kept for backwards compatibility; scraping is now the default
     )
     search_parser.add_argument(
         "--ai",
@@ -163,11 +180,6 @@ def main():
     if not args.command:
         parser.print_help()
         sys.exit(0)
-
-    # Adjust behavior for --no-browser
-    if args.command == "web" and args.no_browser:
-        # Override the browser opening logic inside cmd_web
-        pass
 
     args.func(args)
 

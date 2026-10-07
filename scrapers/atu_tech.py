@@ -1,13 +1,21 @@
-"""ATU Tech (a2t.ro) scraper — Vue Storefront API search with robust HTML scraper fallback."""
+"""ATU Tech (a2t.ro) scraper — Vue Storefront catalog API.
+
+The site renders search results client-side, so the HTML contains no products.
+Instead we query the same Elasticsearch-backed catalog API the site's own JS uses.
+"""
 
 import logging
 from urllib.parse import quote_plus
 
 from scrapers.base import BaseScraper
 from models.product import Product
-from config import MAX_RESULTS_PER_SUPPLIER
+from config import MAX_RESULTS_PER_SUPPLIER, REQUEST_TIMEOUT
 
 logger = logging.getLogger(__name__)
+
+# Store index from the site's config (storeId 1 = Romanian store).
+CATALOG_INDEX = "vue_storefront_catalog_1"
+SEARCHABLE_VISIBILITY = (3, 4)  # Magento: 3 = search only, 4 = catalog + search
 
 
 class Scraper(BaseScraper):
@@ -22,151 +30,85 @@ class Scraper(BaseScraper):
         return "https://www.a2t.ro"
 
     def get_search_url(self, query: str) -> str:
-        # User specified clean search url format
         return f"{self.base_url}/cauta/{quote_plus(query)}?sort=price_asc"
 
     def search(self, query: str) -> list[Product]:
-        # 1. Attempt Vue Storefront API search first
-        api_url = f"{self.base_url}/api/catalog/vue_storefront_catalog/product/_search"
+        # First require every word to match; if that finds nothing, accept any word
+        # (the engine's relevancy filter then removes the noise).
+        for operator in ("and", "or"):
+            hits = self._query_api(query, operator)
+            if hits is None:  # API error — don't hammer it with a second request
+                return self._fallback_link(query)
+            products = [p for p in (self._parse_hit(h) for h in hits) if p]
+            if products:
+                return products
+        return []
+
+    def _query_api(self, query: str, operator: str) -> list[dict] | None:
+        url = f"{self.base_url}/api/catalog/{CATALOG_INDEX}/product/_search"
         body = {
             "query": {
-                "multi_match": {
-                    "query": query,
-                    "fields": ["name^3", "sku", "description"],
-                    "type": "best_fields",
+                "bool": {
+                    "must": [{
+                        "multi_match": {
+                            "query": query,
+                            "fields": ["name^3", "sku^5"],
+                            "operator": operator,
+                        }
+                    }],
+                    "filter": [
+                        {"term": {"status": 1}},
+                        {"terms": {"visibility": list(SEARCHABLE_VISIBILITY)}},
+                    ],
                 }
             },
+            "sort": [{"final_price": "asc"}],
             "size": MAX_RESULTS_PER_SUPPLIER,
         }
 
         self._rate_limit()
-        
-        import time
-        for _ in range(15):  # retry up to 15 times (wait for valid response)
-            try:
-                response = self._session.post(
-                    api_url,
-                    json=body,
-                    timeout=10,
-                )
-                if response.status_code == 200:
-                    data = response.json()
-                    products = self._parse_api_response(data)
-                    if products:
-                        return products
-            except Exception as e:
-                logger.debug("[%s] Vue Storefront API failed, retrying...: %s", self.supplier_name, e)
-            time.sleep(0.5)
-
-        # 2. Fallback to HTML scraping
-        return self._scrape_html(query)
-
-    def _parse_api_response(self, data: dict) -> list[Product]:
-        """Parse Vue Storefront API response."""
-        products = []
-        hits = data.get("hits", {}).get("hits", [])
-
-        for hit in hits[:MAX_RESULTS_PER_SUPPLIER]:
-            try:
-                source = hit.get("_source", {})
-                name = source.get("name", "")
-                if not name:
-                    continue
-
-                price = source.get("special_price") or source.get("price") or 0.0
-                if isinstance(price, str):
-                    price = float(price) if price else 0.0
-                price = float(price)
-
-                slug = source.get("url_path") or source.get("url_key", "")
-                url = f"{self.base_url}/{slug}" if slug else self.base_url
-
-                stock = source.get("stock", {})
-                in_stock = stock.get("is_in_stock", True) if isinstance(stock, dict) else True
-
-                products.append(Product(
-                    name=name,
-                    price=price,
-                    currency="RON",
-                    url=url,
-                    supplier=self.supplier_name,
-                    in_stock=in_stock,
-                ))
-            except Exception as e:
-                logger.debug("[%s] Failed to parse API hit: %s", self.supplier_name, e)
-                continue
-
-        return products
-
-    def _scrape_html(self, query: str) -> list[Product]:
-        """Scrape the search results page directly."""
-        search_url = self.get_search_url(query)
-        html = self._fetch(search_url)
-
-        if not html:
-            return self._fallback_link(query)
-
-        soup = self._parse_html(html)
-        products = []
-
-        # Common selectors for product cards
-        items = (
-            soup.select(".product-item") or
-            soup.select(".product-card") or
-            soup.select(".product") or
-            soup.select("div.product") or
-            soup.select(".product-box") or
-            soup.select("[itemtype*='Product']")
-        )
-
-        for item in items[:MAX_RESULTS_PER_SUPPLIER]:
-            try:
-                product = self._parse_html_item(item)
-                if product:
-                    products.append(product)
-            except Exception as e:
-                logger.debug("[%s] HTML item parsing failed: %s", self.supplier_name, e)
-                continue
-
-        if not products:
-            return self._fallback_link(query)
-
-        return products
-
-    def _parse_html_item(self, item) -> Product | None:
-        """Parse product details from HTML card."""
-        link = (
-            item.select_one("h2 a, h3 a, h4 a, .product-name a, .title a") or
-            item.select_one("a.product-title, a[href]")
-        )
-        if not link:
+        try:
+            response = self._session.post(url, json=body, timeout=REQUEST_TIMEOUT)
+            response.raise_for_status()
+            return response.json().get("hits", {}).get("hits", [])
+        except Exception as e:
+            logger.warning("[%s] Catalog API failed: %s", self.supplier_name, e)
             return None
 
-        name = link.get("title") or link.get_text(strip=True)
-        if not name or len(name) < 3:
+    def _parse_hit(self, hit: dict) -> Product | None:
+        source = hit.get("_source", {})
+        name = source.get("name")
+        url_key = source.get("url_key")
+        if not name or not url_key:
             return None
 
-        url = self._absolute_url(link.get("href", ""))
+        price = _to_float(source.get("final_price")) or _to_float(source.get("price"))
+        special = _to_float(source.get("special_price"))
+        if special and (not price or special < price):
+            price = special
 
-        price_el = item.select_one(
-            ".price-new, .price, .pret, span.price, .special-price, .product-price"
+        # Product pages live under /<category>/<url_key>.html (any category prefix resolves).
+        categories = source.get("category") or []
+        category = next(
+            (c.get("url_path") for c in reversed(categories) if isinstance(c, dict) and c.get("url_path")),
+            "produs",
         )
-        price = 0.0
-        if price_el:
-            price_text = price_el.get("content") or price_el.get_text(strip=True)
-            parsed_price = self._parse_price(price_text)
-            if parsed_price is not None:
-                price = parsed_price
 
-        # Check stock status
-        text_lower = item.get_text().lower()
-        in_stock = "stoc epuizat" not in text_lower and "la comanda" not in text_lower
+        stock = source.get("stock")
+        in_stock = bool(stock.get("is_in_stock")) if isinstance(stock, dict) else True
 
         return Product(
             name=name,
-            price=price,
+            price=price or 0.0,
             currency="RON",
-            url=url,
+            url=f"{self.base_url}/{category}/{url_key}.html",
             supplier=self.supplier_name,
             in_stock=in_stock,
         )
+
+
+def _to_float(value) -> float:
+    try:
+        return float(value) if value not in (None, "") else 0.0
+    except (TypeError, ValueError):
+        return 0.0

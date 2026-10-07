@@ -52,6 +52,7 @@ async def run_search(
     country: str = Query(None, description="Filter suppliers by country code (RO, PL, etc.)"),
     force_scrape: bool = Query(False, description="Force scraping bypassing link_only constraints"),
     ai_optimize: bool = Query(False, description="Whether to optimize the search query using Gemini AI"),
+    v: int = Query(1, description="Response format: 1 = plain list of products (old UI), 2 = full outcome"),
 ):
     """Run search query across suppliers concurrently."""
     query = q.strip()
@@ -75,20 +76,28 @@ async def run_search(
         )
 
     # Execute search in thread pool to avoid blocking the event loop
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     try:
         engine = SearchEngine(scrapers)
         # SearchEngine.search runs scrapers in a ThreadPoolExecutor internally
-        products = await loop.run_in_executor(executor, engine.search, query, ai_optimize)
-        
-        # Sort by price using existing logic
-        sorted_products = sort_by_price(products)
-
-        # Convert to dictionary representation
-        return [p.to_dict() for p in sorted_products]
+        outcome = await loop.run_in_executor(executor, engine.search, query, ai_optimize)
+        outcome.products = sort_by_price(outcome.products)
+        if v < 2:
+            # A browser still running a cached old app.js expects a bare list.
+            return [p.to_dict() for p in outcome.products]
+        return outcome.to_dict()
     except Exception as e:
-        logger.error("Search failed: %s", e)
-        raise HTTPException(status_code=500, detail=f"Search failed: {str(e)}")
+        logger.exception("Search failed")
+        raise HTTPException(status_code=500, detail=f"Search failed: {type(e).__name__}")
+
+
+@app.middleware("http")
+async def no_cache_ui(request, call_next):
+    """Make the browser revalidate the UI files, so a code update is never mixed with a stale app.js."""
+    response = await call_next(request)
+    if request.url.path == "/" or request.url.path.startswith("/static/"):
+        response.headers["Cache-Control"] = "no-cache"
+    return response
 
 
 # Serve Web UI files

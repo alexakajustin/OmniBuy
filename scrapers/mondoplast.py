@@ -6,7 +6,6 @@ from urllib.parse import quote_plus
 
 from scrapers.base import BaseScraper
 from models.product import Product
-from config import MAX_RESULTS_PER_SUPPLIER
 
 logger = logging.getLogger(__name__)
 
@@ -45,10 +44,12 @@ class Scraper(BaseScraper):
         soup = self._parse_html(html)
         products = []
 
-        # Product rows are <tr class="cout"> inside <table class="pdrdisp">
+        # Product rows are <tr class="cout"> inside <table class="pdrdisp">.
+        # The site's search is loose (OR-matching, unsorted), so parse every row and let the
+        # engine's relevancy filter and price sort pick the right ones.
         items = soup.select("tr.cout")
 
-        for item in items[:MAX_RESULTS_PER_SUPPLIER]:
+        for item in items:
             try:
                 product = self._parse_item(item)
                 if product:
@@ -72,26 +73,19 @@ class Scraper(BaseScraper):
 
         url = self._absolute_url(link.get("href", ""))
 
-        # Find price — typically in a <font color='red'> or last TD
+        # Prices: the red one is WITHOUT VAT; every other supplier shows prices with VAT,
+        # so use the "cuTVA 21%: 155.44 LEI" figure to keep the comparison fair.
+        text = item.get_text(" ", strip=True)
         price = 0.0
-        price_el = item.select_one("font[color='red'], .price, .pret, span.pret")
-        if price_el:
-            price_text = price_el.get_text(strip=True)
-            parsed = self._parse_price(price_text)
+        match = re.search(r"cuTVA[^:]*:\s*([\d.,]+)\s*LEI", text, re.I)
+        if match:
+            parsed = self._parse_price(match.group(1))
             if parsed is not None:
                 price = parsed
-        else:
-            # Regex fallback in the row text
-            text = item.get_text()
-            match = re.search(r"(\d+[.,]\d{2})\s*(lei|ron|RON|Lei|EUR|eur)", text)
-            if match:
-                parsed = self._parse_price(match.group(1))
-                if parsed is not None:
-                    price = parsed
 
         # Check stock
         in_stock = True
-        text_lower = item.get_text().lower()
+        text_lower = text.lower()
         if "la comanda" in text_lower or "sunati" in text_lower:
             in_stock = False
 

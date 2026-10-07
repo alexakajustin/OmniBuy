@@ -27,6 +27,9 @@ class BaseScraper(ABC):
     Common logic (HTTP, price parsing, retries) lives here — DRY.
     """
 
+    # Set by the registry: when True the engine returns a search link instead of scraping.
+    is_link_only: bool = False
+
     def __init__(self):
         self._session = requests.Session(impersonate="chrome110")
         self._session.headers.update(DEFAULT_HEADERS)
@@ -70,6 +73,7 @@ class BaseScraper(ABC):
                 url=self.get_search_url(query),
                 supplier=self.supplier_name,
                 in_stock=True,
+                is_link=True,
             )
         ]
 
@@ -86,7 +90,7 @@ class BaseScraper(ABC):
             try:
                 response = self._session.get(url, timeout=REQUEST_TIMEOUT)
                 response.raise_for_status()
-                return response.text
+                return self._decode(response)
             except Exception as e:
                 logger.warning(
                     "[%s] Request failed (attempt %d/%d): %s — %s",
@@ -97,6 +101,25 @@ class BaseScraper(ABC):
 
         logger.error("[%s] All retries exhausted for %s", self.supplier_name, url)
         return None
+
+    @staticmethod
+    def _decode(response) -> str:
+        """Decode a response body using its declared charset (default UTF-8).
+
+        Guessing the encoding garbles Romanian diacritics (e.g. 'În stoc'),
+        which breaks text checks such as stock detection.
+        """
+        content_type = response.headers.get("content-type", "")
+        match = re.search(r"charset=([\w-]+)", content_type, re.I)
+        if not match:
+            match = re.search(rb"<meta[^>]+charset=[\"']?([\w-]+)", response.content[:4096], re.I)
+        charset = match.group(1) if match else "utf-8"
+        if isinstance(charset, bytes):
+            charset = charset.decode("ascii", "ignore")
+        try:
+            return response.content.decode(charset, errors="replace")
+        except LookupError:
+            return response.content.decode("utf-8", errors="replace")
 
     def _parse_html(self, html: str) -> BeautifulSoup:
         """Parse HTML string into BeautifulSoup object."""
@@ -175,14 +198,4 @@ class LinkOnlyScraper(BaseScraper):
 
     def search(self, query: str) -> list[Product]:
         """Return a single 'result' with the search link."""
-        search_url = self.get_search_url(query)
-        return [
-            Product(
-                name=f"[LINK] Caută '{query}' pe {self.supplier_name}",
-                price=0.0,
-                currency=self.currency,
-                url=search_url,
-                supplier=self.supplier_name,
-                in_stock=True,
-            )
-        ]
+        return self._fallback_link(query)

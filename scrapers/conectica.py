@@ -22,7 +22,8 @@ class Scraper(BaseScraper):
         return "https://www.conectica.ro"
 
     def get_search_url(self, query: str) -> str:
-        return f"{self.base_url}/cautare?q={quote_plus(query)}&sort=p.price&order=ASC"
+        # 'sortare=pret_asc' is the site's real price sort (the old sort=p.price&order=ASC is ignored).
+        return f"{self.base_url}/cautare?q={quote_plus(query)}&sortare=pret_asc"
 
     def search(self, query: str) -> list[Product]:
         search_url = self.get_search_url(query)
@@ -65,8 +66,9 @@ class Scraper(BaseScraper):
         if price is None:
             return None
 
-        # Stock: div.stoc-s text content
-        stock_tag = item.select_one("div.stoc-s")
+        # Stock: "În stoc magazin" / "Stoc depozit" (div.stoc-s) or "Stoc limitat" (div.stoc-sl).
+        # Products without a stock label have no buy button either — they can't be ordered.
+        stock_tag = item.select_one("div.stoc-s, div.stoc-sl")
         stock_text = stock_tag.get_text(strip=True).lower() if stock_tag else ""
         in_stock = "stoc" in stock_text
 

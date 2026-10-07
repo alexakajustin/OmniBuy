@@ -72,8 +72,9 @@ def get_scrapers(
 
         scraper = _load_scraper(supplier)
         if scraper:
-            # Set link_only behavior dynamically (link-only if not force_scrape)
-            scraper.is_link_only = not force_scrape
+            # "link_only" in suppliers.json = the site blocks or can't be scraped, never scrape it.
+            # force_scrape=False (UI checkbox off / CLI --links-only) turns scraping off for everyone.
+            scraper.is_link_only = supplier.get("link_only", False) or not force_scrape
             scrapers.append(scraper)
 
     return scrapers
