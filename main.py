@@ -112,8 +112,8 @@ def cmd_web(args):
 
         Timer(1.0, open_browser).start()
 
-    # Run Uvicorn server
-    uvicorn.run("web.server:app", host=host, port=port, log_level="warning")
+    # Run Uvicorn server with auto-reload
+    uvicorn.run("web.server:app", host=host, port=port, log_level="warning", reload=True)
 
 
 

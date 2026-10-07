@@ -140,8 +140,26 @@ class BaseScraper(ABC):
         if not cleaned:
             return None
 
-        # Remove spaces (thousands separator in some formats)
-        cleaned = cleaned.replace(" ", "")
+        # If multiple numeric groups exist (e.g. "588.09 21 711.59"), pick the best matching price token
+        tokens = cleaned.split()
+        is_thousands_grouping = (
+            len(tokens) > 1
+            and re.fullmatch(r"\d{1,3}", tokens[0])
+            and all(re.fullmatch(r"\d{3}(?:[.,]\d{1,2})?", t) for t in tokens[1:])
+        )
+        if is_thousands_grouping:
+            # Space as thousands separator: "15 990" / "1 234,56"
+            cleaned = "".join(tokens)
+        elif len(tokens) > 1:
+            for tok in tokens:
+                if re.match(r"^\d{1,6}(?:[.,]\d{1,2})?$", tok):
+                    cleaned = tok
+                    break
+            else:
+                cleaned = tokens[0]
+        else:
+            # Remove spaces (thousands separator in some formats)
+            cleaned = cleaned.replace(" ", "")
 
         # Determine decimal separator
         # If both . and , exist, the last one is the decimal separator

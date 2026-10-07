@@ -22,7 +22,7 @@ def export(products: list[Product], filepath: str):
     ]
 
     with open(path, "w", newline="", encoding="utf-8-sig") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
         writer.writeheader()
         for product in products:
             writer.writerow(product.to_dict())

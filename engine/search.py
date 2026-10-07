@@ -94,6 +94,9 @@ class SearchEngine:
 
         _normalize_currencies(all_results)
         relevant = filter_relevant(all_results, [query, outcome.effective_query])
+        # Technical spec rules on top (PoE, Gigabit, Cat6, NVR vs. accessories, ...).
+        from engine.spec_filter import filter_spec_compliance
+        relevant = filter_spec_compliance(f"{query} {outcome.effective_query}", relevant)
         outcome.products = cap_per_supplier(relevant, MAX_RESULTS_PER_SUPPLIER)
 
         # Report what survived filtering, not what the supplier's loose search returned.

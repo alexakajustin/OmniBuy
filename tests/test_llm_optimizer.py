@@ -3,6 +3,7 @@
 import pytest
 
 from engine import llm_optimizer as opt
+from engine.agent_balancer import AgentModelLoadBalancer
 
 
 @pytest.fixture(autouse=True)
@@ -133,10 +134,11 @@ def test_gemini_falls_through_models_on_quota(monkeypatch):
         return _gemini_reply("cat6")
 
     monkeypatch.setattr(opt, "GEMINI_API_KEY", "k")
-    monkeypatch.setattr(opt, "GEMINI_MODELS", ["model-a", "model-b"])
+    monkeypatch.setattr(opt, "gemini_balancer", AgentModelLoadBalancer(models=["model-a", "model-b"]))
     monkeypatch.setattr(opt, "_post", post)
     assert opt._call_gemini("keystone cat6") == '{"search_term": "cat6"}'
     assert len(calls) == 2
+    assert not opt.gemini_balancer._stats["model-a"].is_available  # cooled down after 429
 
 
 def test_gemini_bad_key_does_not_try_other_models(monkeypatch):
@@ -147,7 +149,7 @@ def test_gemini_bad_key_does_not_try_other_models(monkeypatch):
         raise opt.ProviderError("HTTP 400 API key not valid", 400)
 
     monkeypatch.setattr(opt, "GEMINI_API_KEY", "k")
-    monkeypatch.setattr(opt, "GEMINI_MODELS", ["model-a", "model-b"])
+    monkeypatch.setattr(opt, "gemini_balancer", AgentModelLoadBalancer(models=["model-a", "model-b"]))
     monkeypatch.setattr(opt, "_post", post)
     with pytest.raises(opt.ProviderError):
         opt._call_gemini("keystone cat6")

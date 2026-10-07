@@ -20,18 +20,20 @@ from dotenv import load_dotenv
 
 logger = logging.getLogger(__name__)
 
-# Load .env variables
+# Load .env variables (before importing the balancer, which reads GEMINI_MODELS)
 load_dotenv()
+
+from engine.agent_balancer import AgentModelLoadBalancer, BalancingStrategy, DEFAULT_GEMINI_MODELS  # noqa: E402
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
-# Tried in order; the next one is used when a model is out of quota (429), retired (404) or down.
-# Flash Lite models have far higher free-tier quotas than Flash and are plenty for this task.
-GEMINI_MODELS = [
-    m.strip()
-    for m in os.getenv("GEMINI_MODELS", "gemini-3.5-flash-lite,gemini-3.1-flash-lite").split(",")
-    if m.strip()
-]
+# Shared model fleet: rotates across Gemini models and cools down the ones that hit
+# their quota (429) or are unavailable, so the next search skips them right away.
+gemini_balancer = AgentModelLoadBalancer(
+    models=DEFAULT_GEMINI_MODELS,
+    strategy=BalancingStrategy.LEAST_BUSY,
+    cooldown_seconds=60.0,
+)
 DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
 
 LLM_TIMEOUT = 10  # seconds per provider — the search waits on this
@@ -228,7 +230,7 @@ def _call_gemini(user_query: str) -> str | None:
     }
 
     errors = []
-    for model in GEMINI_MODELS:
+    for model in gemini_balancer.get_fallback_order_sync():
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
         try:
             data = _post(url, payload, headers)
@@ -237,8 +239,13 @@ def _call_gemini(user_query: str) -> str | None:
             # A bad key or bad request fails the same way on every model — don't burn time on the rest.
             if e.status in (400, 401, 403):
                 break
+            # Out of quota (429) or retired model (404): cool it down so later searches skip it.
+            gemini_balancer.release_model_sync(model, success=False, is_rate_limited=e.status in (404, 429))
             logger.warning("[AI/gemini] %s failed (%s), trying next model", model, e)
+            if len(errors) >= 3:  # bound the wait; the original query is a fine fallback
+                break
             continue
+        gemini_balancer.release_model_sync(model, success=True)
         try:
             parts = data["candidates"][0]["content"]["parts"]
         except (KeyError, IndexError, TypeError):

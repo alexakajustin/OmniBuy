@@ -17,6 +17,8 @@ def scraper():
     ("1,234.56", 1234.56),
     ("15 990 Ft", 15990.0),
     ("1234", 1234.0),
+    ("1 234,56 lei", 1234.56),
+    ("588.09 21 711.59", 588.09),  # several numbers: take the first price-like one
 ])
 def test_parse_price(scraper, raw, expected):
     assert scraper._parse_price(raw) == pytest.approx(expected)
